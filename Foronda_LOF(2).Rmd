@@ -1,0 +1,177 @@
+---
+title: "[DITK] Local Outlier Factor"
+output: html_notebook
+---
+
+# Pre-liminaries
+
+### Installing the packages needed.
+
+Please update and run here when adding new packages
+
+```{r}
+pkgs <- sort(c('readr', 'dplyr', 'tidyr', 'tidylog', 'lubridate', 'ggplot2', 'gridExtra', 'cowplot', 'ggmap', 'leaflet', 'viridis', 'DataCombine', 'ggplotify', 'ggpubr', 'tinytex', 'dbscan'))
+
+pkgs_install <- pkgs[!(pkgs %in% installed.packages()[,"Package"])]
+if(length(pkgs_install)){
+  install.packages(pkgs_install)
+}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(tidylog)
+library(lubridate)
+library(ggplot2)
+library(gridExtra)
+library(cowplot)
+library(ggmap)
+library(leaflet)
+library(viridis)
+library(htmltools)
+library(DataCombine)
+library(ggplotify)
+library(ggpubr)
+tinytex::install_tinytex()
+library(tinytex)
+library(dbscan)
+```
+
+# Data Preprocessing Continuation
+
+### Importing the datasets
+
+We import the dataset using `read_csv` and use `view` `head` and `tail` to view some records.
+
+```{r}
+merged_df <- read_csv("datasets/preprocessed.csv")
+```
+
+### Splitting the Data
+
+```{r}
+df2 <- merged_df
+```
+
+```{r}
+df2$YEAR <- year(df2$DATE)
+df2$MONTH <- month(df2$DATE)
+df2$DAY <- day(df2$DATE)
+df2 <- subset(df2, select = -c(DATE))
+```
+
+```{r}
+head(df2)
+```
+
+```{r}
+yearly_data <- split(df2, df2$YEAR)
+head(yearly_data$`2023`)
+```
+
+# Local Outlier Factor
+
+```{r}
+
+lof_scores <- lof(yearly_data$`2023`[, 4:5], minPts = 6)
+threshold <- 1.5
+ 
+# Identify and mark outliers
+outliers <- yearly_data$`2023`[lof_scores > threshold, ]
+yearly_data$`2023`$outlier <- ifelse(lof_scores > threshold, "Outlier", "Inlier")
+yearly_data$`2023`$LOF <- lof_scores
+ 
+ 
+lof1 <- ggplot(yearly_data$`2023`, aes(`AVE. DP`, `AVE. HUM`, color = outlier)) +
+  geom_point() +
+  scale_color_manual(values = c("blue", "red")) +
+  geom_text(aes(`AVE. DP`, `AVE. HUM`, label = ifelse(outlier == "Outlier", paste(LOF), "")),  # Add labels only for outliers
+            vjust = 1,  # Adjust vertical position of text (optional)
+            hjust = 1,  # Adjust horizontal position of text (optional)
+            inherit.aes = FALSE) +  # Inherit aesthetics except color
+  theme_minimal() +
+  labs(title = "Outlier Detection with LOF")
+
+lof1
+```
+
+```{r}
+View(yearly_data$`2023`)
+```
+
+```{r}
+yearly_data$`2023`$LOF <- lof_scores
+
+```
+
+```{r}
+ggsave("plots/lof1.png", plot = lof1, dpi = 300, width = 10, height = 6)
+```
+
+```{r}
+lof_scores <- lof(df2[, 4:5], minPts = 6)
+threshold <- 1.5
+ 
+# Identify and mark outliers
+outliers <- df2[lof_scores > threshold, ]
+df2$outlier <- ifelse(lof_scores > threshold, "Outlier", "Inlier")
+df2$LOF <- lof_scores
+ 
+ 
+lof2 <- ggplot(df2, aes(`AVE. DP`, `AVE. HUM`, color = outlier)) +
+  geom_point() +
+  scale_color_manual(values = c("blue", "red")) +
+  geom_text(aes(`AVE. DP`, `AVE. HUM`, label = ifelse(outlier == "Outlier", paste(LOF), "")),  # Add labels only for outliers
+            vjust = 1,  # Adjust vertical position of text (optional)
+            hjust = 1,  # Adjust horizontal position of text (optional)
+            inherit.aes = FALSE) +  # Inherit aesthetics except color
+  theme_minimal() +
+  labs(title = "Outlier Detection with LOF")
+
+lof2
+```
+
+```{r}
+lof_scores <- lof(df2[, 4:5], minPts = 6)
+threshold <- 1.5
+ 
+# Identify and mark outliers
+outliers <- df2[lof_scores > threshold, ]
+df2$outlier <- ifelse(lof_scores > threshold, "Outlier", "Inlier")
+df2$LOF <- lof_scores
+ 
+ 
+lof2 <- ggplot(df2, aes(`AVE. DP`, `AVE. HUM`, color = outlier)) +
+  geom_point() +
+  scale_color_manual(values = c("blue", "red")) +
+  geom_text(aes(`AVE. DP`, `AVE. HUM`, label = ifelse(outlier == "Outlier", paste(LOF), "")),  # Add labels only for outliers
+            vjust = 1,  # Adjust vertical position of text (optional)
+            hjust = 1,  # Adjust horizontal position of text (optional)
+            inherit.aes = FALSE) +  # Inherit aesthetics except color
+  theme_minimal() +
+  labs(title = "Outlier Detection with LOF")
+
+lof2
+```
+
+```{r}
+df3 <- merged_df
+```
+
+```{r}
+lof_scores <- lof(df3[, 4], minPts = 6)
+threshold <- 1
+ 
+# Identify and mark outliers
+outliers <- df3[lof_scores > threshold, ]
+df3$outlier <- ifelse(lof_scores > threshold, "Outlier", "Inlier")
+df3$LOF <- lof_scores
+ 
+ 
+lof3 <- ggplot(df3, aes(`DATE`, `AVE. TEMP`, color = outlier)) +
+  geom_point() +
+  scale_color_manual(values = c("blue", "red")) +
+  theme_minimal() +
+  labs(title = "Outlier Detection with LOF")
+
+lof3
+```

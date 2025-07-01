@@ -1,0 +1,374 @@
+---
+title: '[DITK] Data Preprocessing'
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+# Pre-liminaries
+
+### Installing the packages needed.
+
+Please update and run here when adding new packages
+
+```{r}
+pkgs <- sort(c('readr', 'dplyr', 'tidyr', 'tidylog', 'lubridate', 'ggplot2', 'gridExtra', 'cowplot', 'ggmap', 'leaflet', 'viridis', 'DataCombine', 'ggplotify', 'ggpubr', 'tinytex'))
+
+pkgs_install <- pkgs[!(pkgs %in% installed.packages()[,"Package"])]
+if(length(pkgs_install)){
+  install.packages(pkgs_install)
+}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(tidylog)
+library(lubridate)
+library(ggplot2)
+library(gridExtra)
+library(cowplot)
+library(ggmap)
+library(leaflet)
+library(viridis)
+library(htmltools)
+library(DataCombine)
+library(ggplotify)
+library(ggpubr)
+tinytex::install_tinytex()
+library(tinytex)
+```
+
+### Importing the datasets
+
+We import the dataset using `read_csv` and use `view` `head` and `tail` to view some records.
+
+```{r}
+dataset <- read_csv("datasets/2013-2023.csv")
+View(dataset)
+head(dataset)
+tail(dataset)
+```
+
+```{r}
+spec(dataset)
+```
+
+# Data Pre-processing
+
+### Changing column names For consistency and format
+
+```{r}
+colnames(dataset) <- c('DATE', 'TIME', 'TEMP', 'DP', 'HUM', 'WND_DIR', 'WND_SPD', 'WND_GST', 'PRES', 'PRECIP', 'COND')
+```
+
+### Remove units and convert values to numerical
+
+```{r}
+dataset$TEMP <- as.numeric(gsub('[^0-9.]','', dataset$TEMP))
+dataset$DP <- as.numeric(gsub('[^0-9.]','', dataset$DP))
+dataset$HUM <- as.numeric(gsub('[^0-9.]','', dataset$HUM))
+dataset$WND_SPD <- as.numeric(gsub('[^0-9.]','', dataset$WND_SPD))
+dataset$WND_GST <- as.numeric(gsub('[^0-9.]','', dataset$WND_GST))
+dataset$PRES <- as.numeric(gsub('[^0-9.]','', dataset$PRES))
+dataset$PRECIP <- as.numeric(gsub('[^0-9.]','', dataset$PRECIP))
+head(dataset)
+tail(dataset)
+```
+
+### Checking for null values
+
+```{r}
+print("Number of NULL values under each column:")
+colSums(is.na(dataset))
+```
+
+We will not be using WIND_DIR so we will not bother removing the NULL values.
+
+### Check for values
+
+```{r}
+sort(table(dataset$TEMP), decreasing =T)
+sort(table(dataset$DP), decreasing =T)
+sort(table(dataset$HUM), decreasing =T)
+```
+
+We observe the there are 0 values in these 3 columns which the value should not appear on. These are cases of missing values. We will replace these values with the mean of the date they are observed.
+
+We will make another dataframe without the 0 rows, calculate the mean for every date.
+
+```{r}
+no_zero_data <- subset(dataset, dataset$TEMP != 0 & dataset$DP != 0 & dataset$HUM != 0)
+```
+
+```{r}
+mean_temp <- aggregate(no_zero_data$TEMP ~ no_zero_data$DATE, data = no_zero_data, FUN = mean)
+mean_dp <- aggregate(no_zero_data$DP ~ no_zero_data$DATE, data = no_zero_data, FUN = mean)
+mean_hum <- aggregate(no_zero_data$HUM ~ no_zero_data$DATE, data = no_zero_data, FUN = mean)
+```
+
+Let's turn the 0 values into NA first.
+
+```{r}
+dataset$TEMP[dataset$TEMP == 0] <- NA
+dataset$DP[dataset$DP == 0] <- NA
+dataset$HUM[dataset$HUM == 0] <- NA
+```
+
+```{r}
+rows_with_na <- dataset[!complete.cases(dataset), ]
+print(rows_with_na)
+```
+
+```{r}
+dataset$TEMP[is.na(dataset$TEMP)] <- mean_temp$`no_zero_data$TEMP`[match(dataset$DATE, mean_temp$`no_zero_data$DATE`)][is.na(dataset$TEMP)]
+dataset$DP[is.na(dataset$DP)] <- mean_dp$`no_zero_data$DP`[match(dataset$DATE, mean_temp$`no_zero_data$DATE`)][is.na(dataset$DP)]
+dataset$HUM[is.na(dataset$HUM)] <- mean_hum$`no_zero_data$HUM`[match(dataset$DATE, mean_temp$`no_zero_data$DATE`)][is.na(dataset$HUM)]
+```
+
+Let's check for NA values
+
+```{r}
+colSums(is.na(dataset))
+```
+
+We've successfully replaced missing values with the mean.
+
+### Getting the average of the columns per day
+
+We are more interested in daily instead of hourly observations so we will get the daily averages of each and also get the min and max temperature for each day.
+
+```{r}
+average_temp <- aggregate(dataset$TEMP ~ dataset$DATE, data = dataset, FUN = mean)
+average_dp <- aggregate(dataset$DP ~ dataset$DATE, data = dataset, FUN = mean)
+average_hum <- aggregate(dataset$HUM ~ dataset$DATE, data = dataset, FUN = mean)
+average_wndspd <- aggregate(dataset$WND_SPD ~ dataset$DATE, data = dataset, FUN = mean)
+average_wndgst <- aggregate(dataset$WND_GST ~ dataset$DATE, data = dataset, FUN = mean)
+average_pres <- aggregate(dataset$PRES ~ dataset$DATE, data = dataset, FUN = mean)
+average_precip <- aggregate(dataset$PRECIP ~ dataset$DATE, data = dataset, FUN = mean)
+min_temp <- aggregate(dataset$TEMP ~ dataset$DATE, data = dataset, FUN = min)
+max_temp <- aggregate(dataset$TEMP ~ dataset$DATE, data = dataset, FUN = max)
+```
+
+###Merge all average, min, and max values in one dataframe
+
+```{r}
+dfs <- list(min_temp, max_temp, average_temp, average_dp, average_hum, average_pres, average_precip,  average_wndgst, average_wndspd)
+merged_df <- Reduce(function(x, y) merge(x, y, by = "dataset$DATE"), dfs)
+colnames(merged_df) <- c('DATE', 'MIN. TEMP', 'MAX. TEMP', 'AVE. TEMP', 'AVE. DP', 'AVE. HUM', 'AVE. PRES', 'AVE. PRECIP', 'AVE. WND_GST', 'AVE. WND_SPD')
+head(merged_df)
+tail(merged_df)
+```
+
+### Date completeness
+
+We will now check if we have all the days from 2013 to 2023 in our dataset
+
+```{r}
+start_date <- as.Date("2013-01-01")  # Replace "yyyy-mm-dd" with the start date of your range
+end_date <- as.Date("2023-12-31")    # Replace "yyyy-mm-dd" with the end date of your range
+date_range <- seq(start_date, end_date, by = "day")
+
+# Get the unique dates available in your dataset
+data_dates <- unique(as.Date(merged_df$DATE))
+
+# Check if there are any missing dates in the range
+missing_dates <- setdiff(date_range, data_dates)
+
+if (length(missing_dates) == 0) {
+  print("Data is available for all days in the range of years.")
+} else {
+  print("Data is missing for the following days:")
+  print(as.Date(missing_dates))
+}
+```
+
+We have 2 days with missing data. Let's add their data using the average of the month.
+
+```{r}
+tail(merged_df)
+```
+
+```{r}
+merged_df$MONTH <- format(merged_df$DATE, "%m")
+merged_df$YEAR <- format(merged_df$DATE, "%Y")
+
+monthly_average <- aggregate(. ~ MONTH + YEAR, data = merged_df, FUN = mean, na.rm = TRUE)
+merged_df <- subset(merged_df, select = -MONTH)
+merged_df <- subset(merged_df, select = -YEAR)
+```
+
+From the monthly_average table, get the mean of the month of 7-2019 and use it as values for the 2 rows
+
+```{r}
+first_row <- c(DATE = as.Date("2020-07-15"), MIN.TEMP = 79.72414, MAX.TEMP = 91.75862, AVE.TEMP = 85.67882,AVE.DP = 75.42432, AVE.HUM = 72.86002, AVE.PRES = 29.49501, AVE.PRECIP = 0, AVE.WNDSPD = 0.14042244, AVE.WNDGST = 5.295084)
+second_row <- c(DATE = as.Date("2020-07-16"), MIN.TEMP = 79.72414, MAX.TEMP = 91.75862, AVE.TEMP = 85.67882,AVE.DP = 75.42432, AVE.HUM = 72.86002, AVE.PRES = 29.49501, AVE.PRECIP = 0, AVE.WNDSPD = 0.14042244, AVE.WNDGST = 5.295084)
+```
+
+Let's specify the index where they'll be added.
+
+```{r}
+first_index <- 2753
+second_index <- 2754
+```
+
+We use rbind to merge the new rows with merged_df dataframe
+
+```{r}
+merged_df <- InsertRow(merged_df, first_row, first_index)
+merged_df <- InsertRow(merged_df, second_row, second_index)
+```
+
+### Converting Fahrenheit to Celsius
+
+Since we use Celsius commonly in the Philippines, we will be converting the temperature values into celsius.
+
+```{r}
+fahrenheit_to_celsius <- function(fahrenheit) {
+  celsius <- (fahrenheit - 32) * (5/9)
+  return(celsius)
+}
+```
+
+```{r}
+merged_df$`AVE. TEMP` <- fahrenheit_to_celsius(merged_df$`AVE. TEMP`)
+merged_df$`MIN. TEMP` <- fahrenheit_to_celsius(merged_df$`MIN. TEMP`)
+merged_df$`MAX. TEMP` <- fahrenheit_to_celsius(merged_df$`MAX. TEMP`)
+merged_df$`AVE. DP` <- fahrenheit_to_celsius(merged_df$`AVE. DP`)
+```
+
+### Dropping Columns
+
+We see that there are only 0 values under Precipitation even if the Conditions column in previous data frames mentioned rain. We will drop this column.
+
+```{r}
+merged_df <- subset(merged_df, select = -`AVE. PRECIP`)
+```
+
+### View of Pre-processed Data Frame
+
+```{r}
+View(merged_df)
+head(merged_df)
+tail(merged_df)
+```
+
+# Exploratory Data Analysis
+
+### Summary
+
+```{r}
+summary(merged_df)
+```
+
+### Visualizations
+
+#### Box Plots
+
+```{r}
+boxplot(merged_df$`MIN. TEMP`)
+boxplot(merged_df$`MAX. TEMP`)
+boxplot(merged_df$`AVE. TEMP`)
+boxplot(merged_df$`AVE. DP`)
+boxplot(merged_df$`AVE. HUM`)
+boxplot(merged_df$`AVE. PRES`)
+boxplot(merged_df$`AVE. WND_GST`)
+boxplot(merged_df$`AVE. WND_SPD`)
+
+```
+
+Each attribute of the merged data frame was displayed in the form of a box plot:
+
+-   **Minimum Temperature Box Plot:** This box plot shows that the minimum temperature recorded is ranged between 22 to 30 degrees, without the outliers. The common minimum temperature range however is in between 25 to 27 degrees with the median sitting at 26 degrees. This means that the usual lowest temperature experienced in Pasay throughout the years is around 25 to 27 degrees with the most common being at 26.
+
+-   **Maximum Temperature Box Plot:** The average maximum temperature recorded in Pasay is about in the range of 30 to 35 degrees. The highest minimum and maximum range, without considering the outliers, is between sub-30 to 39. There is however outliers which surpass this maximum in where the highest recorded temperature is above 60 degrees and the lowest being around 25 or lower.
+
+-   **Average Temperature Box Plot:** The average recorded temperature falls between 24 to 33 degrees with the vast majoprity of the records being between 27 to 29.5 degrees. Based on the given data, Pasay usually experiences 29 degrees of average temperature in the past years.
+
+-   **Average Dew Point:** The overall average dew point falls in to the range of 18 to 28 degrees with its outliers being below 18 degrees. The common dew point temperature value is in the 22 to 25 degrees range. The most common dew point is at 24 degrees.
+
+-   **Average Humidity:** Unlike the other box plots, the average humidity doesn't have recorded outliers. This means the maximum value is at 100 percent and the minimum being below around 50 percent. The vast majority of recorded humidity values is between 65 to 85 percent with the median being at 75 percent, which indicates a rather humid average environment over the years.
+
+-   **Average Pressure:** The average pressure box plot has a smaller interquartile range, falling in between 29.5 to 30.0 and with the rest of its values being outliers. This means that the common recorded pressure in Pasay over the past decade is at 29.5 to 29.7
+
+-   **Average Wind Gust:** In the given result in the box plot, it can be seen that the most common value of recorded wind gust is zero which makes the box plot being skewed close to zero. This indicates that Pasay rarely records any wind gust that is above 5 mph.
+
+-   **Average Wind Speed:** The overall average wind speed in Pasay is observed to be rather slow, evident in the shown box plot in where the recorded range is between 0 to 12 mph. The common recorded speed however is in the range ot 5 to 7 mph. There are however recorded cases where the wind speed is slightly above average which can be seen with the present outliers, with the highest being at 25 mph or above which can imply aberrant weather cases.
+
+#### Scatter Plots
+
+```{r}
+scat_temp_dp <-plot(merged_df$`AVE. TEMP`, merged_df$`AVE. DP`)
+
+scat_temp_dp
+```
+
+Based on the given scatter plot between the average dew point and average temperature, it can be observed that the two atrributes follows a positive correlation as the point values of the dew point increases as the average temperature increases. With this, it can be inferred that the temperature experienced in Pasay is affected by its dew point and vice versa. Upon looking more on the data, there is a vast cluster of points in the middle which makes up around the range of 27 to 29 degrees of temperature with a variation of dew points with it peaking at around 28 degrees.
+
+#### Time-Series Plots
+
+```{r}
+tsp_temp <- ggplot(merged_df, aes(x = DATE, y = `AVE. TEMP`)) +
+  geom_line(color = "lightcoral") +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Daily Ave. Temperature 2013-2023", x = "Date", y = "Temperature (°C)")
+tsp_dp <- ggplot(merged_df, aes(x = DATE, y = `AVE. DP`)) +
+  geom_line(color = "lightgreen") +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Daily Ave. Dew Point 2013-2023", x = "Date", y = "Dew Point (°C)")
+tsp_hum <- ggplot(merged_df, aes(x = DATE, y = `AVE. HUM`)) +
+  geom_line(color = "skyblue") +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Daily Ave. Humidity 2013-2023", x = "Date", y = "Humidity (°C)")
+
+
+all_tsp <- grid.arrange(tsp_temp, tsp_dp, tsp_hum, nrow = 3)
+
+all_tsp_plot <- as_ggplot(all_tsp)
+
+all_tsp_plot
+```
+
+The following time series plots can be further analyzed:
+
+-   **Daily Average Temperature:** In the given data, it can be observed that the daily average temperature became less and less varied over the years with the most amount of variations can be seen during the 2014 to 2015 time period where it also peaked at around 32.5 and beyond and also has the recorded low point of 22.5 degrees. As the years go by, the average temperature can be seen to steady between 25 to 30 degrees with the most common daily temperature sitting at 27 to 27.5 degrees. It can also be noted that the following graph seems to follow a wave-like pattern which means the temperature changes based on seasons. This trend can be observed further when looking at each start of the year having a relatively low temperature and fluctuates as time goes by. Going into depth with the time-series plot of the daily average temperature, it can be observed that the time plot fluctuates regularly as the year changes and a norm that is seen is that the temperature for that year is usually is at its highest around the start to middle. This can signify a hotter season which is usually around March to May. Beyond that, the temperature then dips at its average temperature around 27.5 degrees and goes lower as the year ends. Here, it can also be seen the highest recorded average temperature, being at above 32.5 and the lowest being slightly above 22.5 which is all recorded during mid-2014 to early 2015.
+-   **Daily Average Dew Point:** The dew point has more a consistent trend over the years with there being a noticeable wave-like pattern. At the start of the year the dew point is usually is at its lowest point with the lowest recorded value being at 15 degrees which was in 2014. The highest recorded dew point was actually during 2023 to 2024 with the value going over 30 degrees. The lowest amount of fluctuations seen in the dew point data can be observed during 2021 to 2023 with the average dew point being set around the median point while also having a relatively low peak and dip.
+-   **Daily Average Humidity:** It is observable in the past years that the average levels is much higher as compared to recent years. There is also a foreseeable pattern in where the humidity level is at its highest during the middle of the given year and usually has its lowest point at the start of each year. Around mid-2018 is where the humidity levels of Pasay peaked, around 100 degrees and the lowest being below 60 degrees during 2014. In the most recent years of 2021 to 2024 it can be observed that the humidity levels are less varied is comparatively has less fluctuations.
+
+#### Correlation Analysis
+
+```{r}
+cor_matrix <- cor(merged_df[, c("AVE. TEMP", "MIN. TEMP", "MAX. TEMP", "AVE. DP", "AVE. HUM", "AVE. WND_SPD", "AVE. WND_GST", "AVE. PRES")])
+
+```
+
+Let's visualize the correlations
+
+```{r}
+cor_df <- as.data.frame(as.table(cor_matrix))
+
+cor_heatmap <- ggplot(data = cor_df, aes(x = Var1, y = Var2, fill = Freq)) +
+  geom_tile() +
+  scale_fill_viridis(option = "viridis") +
+  geom_text(aes(label = round(Freq, 2)), color = "white", size = 3) +
+  labs(title = "Correlation Heatmap", x = "Variables", y = "Variables")
+
+cor_heatmap
+```
+
+Upon looking at the heatmap we can the view various correlations each attribute has to each other. Based on this, it is expected that the minimum and maximum temperature has a correlation to the average temperature. There is also a positive correlation with the average dew point and temperature with frequency values being close to 0.5, which is backed up by the results of the scatter plot. Similar to this, the average humidity and dew point also have a positive correlation as the nature of both deal with the moisture. It is also noticeable that the average humidity and temperature has the darkest color, meaning they do not have any sort of correlation. This also applies to the average pressure with it being the next darkest. Among all of the attributes, the avearge pressure has the least amounts of correlations with the other present attributes as all of its values are negative. This implies that the average pressure is an independent factor and is not affected with other environmental attributes.
+
+# Exporting the dataset
+
+```{r}
+write.csv(merged_df, "preprocessed_2013-2023.csv", row.names=FALSE)
+```
+
+### Exporting the plots as images
+
+```{r}
+ggsave("plots/heatmap_plot.png", plot = cor_heatmap, dpi = 300)
+ggsave("plots/tsp_temp.png", plot = tsp_temp, dpi = 300)
+ggsave("plots/tsp_hum.png", plot = tsp_hum, dpi = 300)
+ggsave("plots/tsp_dp.png", plot = tsp_dp, dpi = 300)
+ggsave("plots/sp_temp_dp.png", plot = scat_temp_dp, dpi = 300)
+ggsave("plots/all_tsp.png", plot = all_tsp_plot, dpi = 300)
+```

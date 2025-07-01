@@ -1,0 +1,159 @@
+---
+title: "[DITK] Local Outlier Factor"
+output: html_notebook
+---
+
+# Pre-liminaries
+
+### Installing the packages needed.
+
+Please update and run here when adding new packages
+
+```{r}
+pkgs <- sort(c('readr', 'dplyr', 'tidyr', 'tidylog', 'lubridate', 'ggplot2', 'gridExtra', 'cowplot', 'ggmap', 'leaflet', 'viridis', 'DataCombine', 'ggplotify', 'ggpubr', 'tinytex', 'Rlof', 'plotly'))
+
+pkgs_install <- pkgs[!(pkgs %in% installed.packages()[,"Package"])]
+if(length(pkgs_install)){
+  install.packages(pkgs_install)
+}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(tidylog)
+library(lubridate)
+library(ggplot2)
+library(gridExtra)
+library(cowplot)
+library(ggmap)
+library(leaflet)
+library(viridis)
+library(htmltools)
+library(DataCombine)
+library(ggplotify)
+library(ggpubr)
+library(tinytex)
+library(Rlof)
+library(plotly)
+```
+
+# Data Preprocessing Continuation
+
+### Importing the datasets
+
+We import the dataset using `read_csv` and use `view` `head` and `tail` to view some records.
+
+```{r}
+merged_df <- read_csv("datasets/preprocessed.csv")
+```
+
+```{r}
+df2 <- another <- merged_df
+```
+
+### Optional: Rounding to 2 decimal places
+
+```{r}
+df2 <- round(df2[, c(2:9)], digits = 2)
+df2$DATE <- another$DATE
+df2 <- df2[, c(9, 1:(8))]
+```
+
+### Optional: Scaling the Data
+
+```{r}
+numdataset <- subset(df2, select = -c(DATE))
+scaled_dataset <- as.data.frame(scale(numdataset))
+```
+
+### Optional: Splitting the Data
+
+```{r}
+df2 <- another <- merged_df
+df2 <- round(df2[, 2:9], digits = 2)
+df2$DATE <- another$DATE
+last_col <- names(df2)[ncol(df2)]
+df2 <- cbind(df2[, last_col], df2[,-ncol(df2)])
+```
+
+```{r}
+df2$YEAR <- year(df2$DATE)
+df2$MONTH <- month(df2$DATE)
+df2$DAY <- day(df2$DATE)
+df2 <- subset(df2, select = -c(DATE))
+```
+
+```{r}
+head(df2)
+```
+
+```{r}
+yearly_data <- split(df2, df2$YEAR)
+head(yearly_data$`2023`)
+```
+
+```{r}
+View(yearly_data$`2023`)
+```
+
+# Local Outlier Factor
+
+```{r}
+
+lof_scores <- Rlof::lof(scaled_dataset[, c(3, 5)], k = 10)
+threshold <- 1.4
+ 
+# Identify and mark outliers
+outliers <- scaled_dataset[lof_scores > threshold, ]
+df2$OUTLIER <- ifelse(lof_scores > threshold, "Outlier", "Inlier")
+df2$LOF <- lof_scores
+ 
+ 
+lof1 <- ggplot(df2, aes(`AVE. HUM`, `AVE. TEMP`, color = OUTLIER)) +
+  geom_point() +
+  scale_color_manual(values = c("skyblue", "lightcoral")) +
+  geom_text(aes(`AVE. HUM`, `AVE. TEMP`, label = ifelse(OUTLIER == "Outlier", paste(`AVE. TEMP`, "," , `AVE. HUM`), "")),  # Add labels only for outliers
+            vjust = 1,  # Adjust vertical position of text (optional)
+            hjust = 1,  # Adjust horizontal position of text (optional)
+            inherit.aes = FALSE) +  # Inherit aesthetics except color
+  theme_minimal() +
+  labs(title = "Weather Anomaly Detection with LOF")
+
+lof1
+```
+
+```{r}
+fig <- plot_ly(df2, x = ~DATE, y = ~`AVE. TEMP`, z = ~`AVE. HUM`, color = ~OUTLIER, colors = c('skyblue', 'lightcoral'), marker = list(size = 2))
+fig <- fig %>% add_markers()
+fig <- fig %>% layout(scene = list(xaxis = list(title = 'Date'),
+           yaxis = list(title = 'Average Temperature'),
+           zaxis = list(title = 'Average Humidity')))
+fig
+```
+
+```{r}
+df2[df2$OUTLIER == "Outlier", ]
+
+```
+
+```{r}
+# Assuming lof_scores is the vector containing LOF scores
+
+# Histogram plot
+histogram <- ggplot(scaled_dataset, aes(lof_scores)) +
+  geom_histogram(bins = 30, color = "steelblue") +  # Adjust bins as needed
+  labs(title = "Distribution of LOF Scores", x = "LOF Score", y = "Frequency") +
+  theme_minimal()
+
+# Density plot
+density_plot <- ggplot(scaled_dataset, aes(lof_scores)) +
+  geom_density(color = "royalblue") +
+  labs(title = "Density of LOF Scores", x = "LOF Score", y = "Density") +
+  theme_minimal()
+
+
+grid.arrange(histogram, density_plot, nrow = 1)
+```
+
+```{r}
+ggsave("plots/lof1.png", plot = lof1, dpi = 300, width = 10, height = 6)
+```
